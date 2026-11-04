@@ -63,6 +63,50 @@ class DatabaseTests(unittest.TestCase):
         tool_id = self.db.add_tool("A")
         self.assertEqual(self.db.get_tool(tool_id).category, "")
 
+    def test_update_tool(self):
+        tool_id = self.db.add_tool("Old", version="1", category="A", tags="x, y")
+        self.db.update_tool(
+            tool_id, "New", version="2", description="d", install_notes="n",
+            download_url="https://example.com/a.exe", category="B", tags="y, z",
+        )
+        tool = self.db.get_tool(tool_id)
+        self.assertEqual(
+            (tool.name, tool.version, tool.description, tool.install_notes, tool.download_url),
+            ("New", "2", "d", "n", "https://example.com/a.exe"),
+        )
+        self.assertEqual(tool.category, "B")
+        self.assertEqual(tool.tags, ["y", "z"])
+
+    def test_update_prunes_unused_category_and_tags(self):
+        tool_id = self.db.add_tool("T", category="Typo", tags="old, keep")
+        self.db.update_tool(tool_id, "T", category="Fixed", tags="keep")
+        self.assertEqual(self.db.list_categories(), ["Fixed"])
+        self.assertEqual(self.db.list_tags(), ["keep"])
+
+    def test_update_validation(self):
+        tool_id = self.db.add_tool("T")
+        with self.assertRaises(ValueError):
+            self.db.update_tool(tool_id, "  ")
+        with self.assertRaises(ValueError):
+            self.db.update_tool(9999, "Ghost")
+
+    def test_delete_tool(self):
+        keep = self.db.add_tool("Keep", category="Shared", tags="shared")
+        gone = self.db.add_tool("Gone", category="Shared", tags="shared, only-gone")
+        self.assertTrue(self.db.delete_tool(gone))
+        self.assertIsNone(self.db.get_tool(gone))
+        self.assertFalse(self.db.delete_tool(gone))
+        # shared category/tag stay because another tool uses them
+        self.assertEqual(self.db.list_categories(), ["Shared"])
+        self.assertEqual(self.db.list_tags(), ["shared"])
+        self.assertEqual(self.db.get_tool(keep).tags, ["shared"])
+
+    def test_delete_last_tool_clears_categories_and_tags(self):
+        tool_id = self.db.add_tool("T", category="C", tags="a")
+        self.db.delete_tool(tool_id)
+        self.assertEqual(self.db.list_categories(), [])
+        self.assertEqual(self.db.list_tags(), [])
+
     def test_clean_tags(self):
         self.assertEqual(clean_tags(" a ,, b,A "), ["a", "b"])
         self.assertEqual(clean_tags(["x", "x"]), ["x"])

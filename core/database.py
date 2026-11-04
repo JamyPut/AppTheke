@@ -154,6 +154,58 @@ class Database:
             self._set_tags(tool_id, clean_tags(tags))
         return tool_id
 
+    def update_tool(
+        self,
+        tool_id: int,
+        name: str,
+        version: str = "",
+        description: str = "",
+        install_notes: str = "",
+        download_url: str = "",
+        category: str = "",
+        tags: str | list[str] = "",
+    ) -> None:
+        name = name.strip()
+        if not name:
+            raise ValueError("A tool needs a name.")
+        with self.conn:
+            cur = self.conn.execute(
+                "UPDATE tools SET name = ?, version = ?, description = ?, "
+                "install_notes = ?, download_url = ?, category_id = ? WHERE id = ?",
+                (
+                    name,
+                    version.strip(),
+                    description.strip(),
+                    install_notes.strip(),
+                    download_url.strip(),
+                    self._category_id(category),
+                    tool_id,
+                ),
+            )
+            if cur.rowcount == 0:
+                raise ValueError("That tool no longer exists.")
+            self._set_tags(tool_id, clean_tags(tags))
+            self._prune_unused()
+
+    def delete_tool(self, tool_id: int) -> bool:
+        """Remove a catalog entry. Returns False if it did not exist."""
+        with self.conn:
+            # tool_tags rows go with it (ON DELETE CASCADE).
+            cur = self.conn.execute("DELETE FROM tools WHERE id = ?", (tool_id,))
+            self._prune_unused()
+        return cur.rowcount > 0
+
+    def _prune_unused(self) -> None:
+        """Drop categories and tags that no tool uses any more, so typos
+        and renamed categories do not pile up in the dropdown."""
+        self.conn.execute(
+            "DELETE FROM categories WHERE id NOT IN "
+            "(SELECT category_id FROM tools WHERE category_id IS NOT NULL)"
+        )
+        self.conn.execute(
+            "DELETE FROM tags WHERE id NOT IN (SELECT tag_id FROM tool_tags)"
+        )
+
     def get_tool(self, tool_id: int) -> Tool | None:
         row = self.conn.execute(
             self._SELECT + "WHERE t.id = ?", (tool_id,)
