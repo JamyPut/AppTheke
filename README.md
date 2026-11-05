@@ -25,7 +25,7 @@ AppTheke is a **portable Windows program**. There is nothing to install: it is a
 
 ### Use the ready-made program
 
-1. Download `AppTheke.exe` from the **Releases** page of this repository.
+1. Download `AppTheke.exe` from the [Releases](https://github.com/JamyPut/AppTheke/releases/latest) page of this repository.
 2. Put it in a folder you can write to, such as `Documents\AppTheke` or a folder on a USB stick. Avoid `Program Files`: Windows does not let programs save files there, and AppTheke needs to save its catalog next to itself.
 3. Double-click `AppTheke.exe`.
 
