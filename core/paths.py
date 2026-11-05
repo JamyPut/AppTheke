@@ -22,6 +22,12 @@ def db_path() -> Path:
 
 
 def downloads_dir() -> Path:
+    """Default folder offered by the Download picker. Never raises: if the app
+    folder is read-only (Program Files, for example) the user's home folder is
+    offered instead."""
     folder = app_dir() / "downloads"
-    folder.mkdir(exist_ok=True)
+    try:
+        folder.mkdir(exist_ok=True)
+    except OSError:
+        return Path.home()
     return folder

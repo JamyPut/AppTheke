@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS tools (
     description   TEXT NOT NULL DEFAULT '',
     install_notes TEXT NOT NULL DEFAULT '',
     download_url  TEXT NOT NULL DEFAULT '',
+    exe_path      TEXT NOT NULL DEFAULT '',
     category_id   INTEGER REFERENCES categories(id) ON DELETE SET NULL,
     created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -49,6 +50,7 @@ class Tool:
     description: str = ""
     install_notes: str = ""
     download_url: str = ""
+    exe_path: str = ""
     category: str = ""
     tags: list[str] = field(default_factory=list)
 
@@ -72,6 +74,17 @@ class Database:
         # SQLite ignores foreign keys unless this is switched on per connection.
         self.conn.execute("PRAGMA foreign_keys = ON")
         self.conn.executescript(SCHEMA)
+        self._migrate()
+
+    def _migrate(self) -> None:
+        """Upgrade databases made by older versions. CREATE TABLE IF NOT EXISTS
+        leaves an existing table untouched, so new columns are added here."""
+        columns = {row["name"] for row in self.conn.execute("PRAGMA table_info(tools)")}
+        if "exe_path" not in columns:
+            self.conn.execute(
+                "ALTER TABLE tools ADD COLUMN exe_path TEXT NOT NULL DEFAULT ''"
+            )
+            self.conn.commit()
 
     def close(self) -> None:
         self.conn.close()
@@ -113,6 +126,7 @@ class Database:
             description=row["description"],
             install_notes=row["install_notes"],
             download_url=row["download_url"],
+            exe_path=row["exe_path"],
             category=row["category"] or "",
             tags=[r["name"] for r in tag_rows],
         )
@@ -131,6 +145,7 @@ class Database:
         description: str = "",
         install_notes: str = "",
         download_url: str = "",
+        exe_path: str = "",
         category: str = "",
         tags: str | list[str] = "",
     ) -> int:
@@ -140,13 +155,14 @@ class Database:
         with self.conn:  # one transaction: all of it is saved, or none of it
             cur = self.conn.execute(
                 "INSERT INTO tools(name, version, description, install_notes, "
-                "download_url, category_id) VALUES (?, ?, ?, ?, ?, ?)",
+                "download_url, exe_path, category_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (
                     name,
                     version.strip(),
                     description.strip(),
                     install_notes.strip(),
                     download_url.strip(),
+                    exe_path.strip(),
                     self._category_id(category),
                 ),
             )
@@ -162,6 +178,7 @@ class Database:
         description: str = "",
         install_notes: str = "",
         download_url: str = "",
+        exe_path: str = "",
         category: str = "",
         tags: str | list[str] = "",
     ) -> None:
@@ -171,13 +188,15 @@ class Database:
         with self.conn:
             cur = self.conn.execute(
                 "UPDATE tools SET name = ?, version = ?, description = ?, "
-                "install_notes = ?, download_url = ?, category_id = ? WHERE id = ?",
+                "install_notes = ?, download_url = ?, exe_path = ?, "
+                "category_id = ? WHERE id = ?",
                 (
                     name,
                     version.strip(),
                     description.strip(),
                     install_notes.strip(),
                     download_url.strip(),
+                    exe_path.strip(),
                     self._category_id(category),
                     tool_id,
                 ),

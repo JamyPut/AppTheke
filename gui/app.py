@@ -13,7 +13,10 @@ import customtkinter as ctk
 
 from core.database import Database, Tool
 from core.downloader import DownloadError, download
+from core.errorlog import log_exception
+from core.launcher import LaunchError, launch
 from core.paths import downloads_dir
+from core.version import __version__
 
 ERROR_COLOR = "#e5534b"
 OK_COLOR = "#3fb950"
@@ -34,7 +37,7 @@ class App(ctk.CTk):
         self._downloading = False
         self._events: queue.Queue = queue.Queue()
 
-        self.title("AppTheke")
+        self.title(f"AppTheke {__version__}")
         self.geometry("1100x700")
         self.minsize(860, 560)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -57,6 +60,17 @@ class App(ctk.CTk):
 
         self.refresh_list()
         self.show_view("empty")
+
+    def report_callback_exception(self, exc_type, exc, tb) -> None:
+        """Tk calls this when a button or key handler raises. The packaged app has
+        no console, so without this an error would pass without any sign."""
+        path = log_exception(exc_type, exc, tb)
+        where = (
+            f"Details were saved to:\n{path}"
+            if path
+            else "The details could not be saved to a file."
+        )
+        messagebox.showerror("AppTheke", f"Something went wrong: {exc}\n\n{where}", parent=self)
 
     def show_view(self, name: str) -> None:
         for view in self.views.values():
@@ -189,15 +203,24 @@ class App(ctk.CTk):
 
         buttons = ctk.CTkFrame(frame, fg_color="transparent")
         buttons.grid(row=3, column=0, sticky="w", padx=8, pady=(12, 4))
+        self.launch_button = ctk.CTkButton(
+            buttons, text="Launch", width=90, command=self.launch_selected
+        )
+        self.launch_button.grid(row=0, column=0, padx=(0, 8))
         self.download_button = ctk.CTkButton(buttons, text="Download", command=self.start_download)
-        self.download_button.grid(row=0, column=0, padx=(0, 8))
+        self.download_button.grid(row=0, column=1, padx=(0, 8))
         ctk.CTkButton(buttons, text="Edit", width=80, command=self.start_edit).grid(
-            row=0, column=1, padx=(0, 8)
+            row=0, column=2, padx=(0, 8)
         )
         ctk.CTkButton(
             buttons, text="Delete", width=80, command=self.delete_selected,
             fg_color=DELETE_COLOR, hover_color=DELETE_HOVER,
-        ).grid(row=0, column=2)
+        ).grid(row=0, column=3)
+        # Result of the last Launch click; sits under the buttons.
+        self.launch_status = ctk.CTkLabel(
+            buttons, text="", anchor="w", justify="left", wraplength=560
+        )
+        self.launch_status.grid(row=1, column=0, columnspan=4, sticky="w", pady=(6, 0))
 
         self.progress = ctk.CTkProgressBar(frame)
         self.progress.set(0)
@@ -218,6 +241,14 @@ class App(ctk.CTk):
             frame, text="", anchor="w", justify="left", wraplength=560, text_color=MUTED
         )
         self.detail_url.grid(row=11, column=0, sticky="ew", padx=8, pady=(2, 8))
+
+        ctk.CTkLabel(frame, text="Executable (used by Launch)").grid(
+            row=12, column=0, sticky="w", padx=8, pady=(4, 0)
+        )
+        self.detail_exe = ctk.CTkLabel(
+            frame, text="", anchor="w", justify="left", wraplength=560, text_color=MUTED
+        )
+        self.detail_exe.grid(row=13, column=0, sticky="ew", padx=8, pady=(2, 8))
         return frame
 
     def _readonly_box(self, parent, row: int, label: str) -> ctk.CTkTextbox:
@@ -261,6 +292,14 @@ class App(ctk.CTk):
         self._set_readonly_text(self.detail_description, tool.description)
         self._set_readonly_text(self.detail_notes, tool.install_notes)
         self.detail_url.configure(text=tool.download_url or "(none)")
+        self.detail_exe.configure(text=tool.exe_path or "(none)")
+
+        # Launch needs a saved path; the message belongs to the previously shown tool.
+        self.launch_button.configure(state="normal" if tool.exe_path else "disabled")
+        self.launch_status.configure(
+            text="" if tool.exe_path else "No executable path yet. Use Edit to add one.",
+            text_color=MUTED,
+        )
 
         if not self._downloading:
             self.progress.grid_remove()
@@ -297,11 +336,27 @@ class App(ctk.CTk):
 
         self.tags_entry = self._field(panel, 7, "Tags (separate with commas)")
         self.url_entry = self._field(panel, 9, "Download URL")
-        self.description_box = self._textbox(panel, 11, "Description", height=90)
-        self.notes_box = self._textbox(panel, 13, "Install notes", height=90)
+
+        ctk.CTkLabel(
+            panel,
+            text="Executable path (the installed program that Launch starts)",
+        ).grid(row=11, column=0, sticky="w", padx=8, pady=(8, 0))
+        exe_row = ctk.CTkFrame(panel, fg_color="transparent")
+        exe_row.grid(row=12, column=0, sticky="ew", padx=8, pady=(2, 0))
+        exe_row.grid_columnconfigure(0, weight=1)
+        self.exe_entry = ctk.CTkEntry(
+            exe_row, placeholder_text=r"C:\Program Files\MyTool\mytool.exe"
+        )
+        self.exe_entry.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        ctk.CTkButton(exe_row, text="Browse...", width=90, command=self.browse_exe).grid(
+            row=0, column=1
+        )
+
+        self.description_box = self._textbox(panel, 13, "Description", height=90)
+        self.notes_box = self._textbox(panel, 15, "Install notes", height=90)
 
         buttons = ctk.CTkFrame(panel, fg_color="transparent")
-        buttons.grid(row=15, column=0, sticky="e", padx=8, pady=(14, 4))
+        buttons.grid(row=17, column=0, sticky="e", padx=8, pady=(14, 4))
         ctk.CTkButton(
             buttons, text="Cancel", width=90, command=self.cancel_form,
             fg_color="transparent", border_width=1, text_color=("gray10", "gray90"),
@@ -310,7 +365,7 @@ class App(ctk.CTk):
         self.save_button.grid(row=0, column=1)
 
         self.status_label = ctk.CTkLabel(panel, text="", anchor="w")
-        self.status_label.grid(row=16, column=0, sticky="w", padx=8)
+        self.status_label.grid(row=18, column=0, sticky="w", padx=8)
         return panel
 
     def _field(self, parent, row: int, label: str) -> ctk.CTkEntry:
@@ -326,7 +381,9 @@ class App(ctk.CTk):
         return box
 
     def _reset_form(self) -> None:
-        for entry in (self.name_entry, self.version_entry, self.tags_entry, self.url_entry):
+        for entry in (
+            self.name_entry, self.version_entry, self.tags_entry, self.url_entry, self.exe_entry
+        ):
             entry.delete(0, "end")
         for box in (self.description_box, self.notes_box):
             box.delete("1.0", "end")
@@ -354,12 +411,29 @@ class App(ctk.CTk):
         self.category_box.set(tool.category)
         self.tags_entry.insert(0, ", ".join(tool.tags))
         self.url_entry.insert(0, tool.download_url)
+        self.exe_entry.insert(0, tool.exe_path)
         self.description_box.insert("1.0", tool.description)
         self.notes_box.insert("1.0", tool.install_notes)
         self.form_title.configure(text=f"Edit {tool.name}")
         self.save_button.configure(text="Save changes")
         self.show_view("form")
         self.name_entry.focus()
+
+    def browse_exe(self) -> None:
+        current = self.exe_entry.get().strip()
+        start_dir = Path(current).parent if current and Path(current).parent.is_dir() else None
+        chosen = filedialog.askopenfilename(
+            parent=self,
+            title="Choose the program to launch",
+            initialdir=str(start_dir) if start_dir else None,
+            filetypes=[
+                ("Programs and shortcuts", "*.exe *.lnk *.bat *.cmd"),
+                ("All files", "*.*"),
+            ],
+        )
+        if chosen:  # empty when the dialog is cancelled
+            self.exe_entry.delete(0, "end")
+            self.exe_entry.insert(0, str(Path(chosen)))
 
     def cancel_form(self) -> None:
         if self.selected_id is not None:
@@ -374,6 +448,7 @@ class App(ctk.CTk):
             description=self.description_box.get("1.0", "end"),
             install_notes=self.notes_box.get("1.0", "end"),
             download_url=self.url_entry.get(),
+            exe_path=self.exe_entry.get(),
             category=self.category_box.get(),
             tags=self.tags_entry.get(),
         )
@@ -392,6 +467,19 @@ class App(ctk.CTk):
         self.selected_id = tool_id
         self.refresh_list()
         self.select_tool(tool_id)
+
+    # ================= launch ===============================================
+
+    def launch_selected(self) -> None:
+        tool = self.db.get_tool(self.selected_id) if self.selected_id else None
+        if tool is None:
+            return
+        try:
+            launch(tool.exe_path)
+        except LaunchError as error:
+            self.launch_status.configure(text=str(error), text_color=ERROR_COLOR)
+            return
+        self.launch_status.configure(text=f"Started {tool.name}.", text_color=OK_COLOR)
 
     # ================= delete ===============================================
 

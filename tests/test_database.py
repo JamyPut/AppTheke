@@ -107,6 +107,48 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(self.db.list_categories(), [])
         self.assertEqual(self.db.list_tags(), [])
 
+    def test_exe_path_roundtrip_and_update(self):
+        tool_id = self.db.add_tool("A", exe_path=r"  C:\Program Files\A\a.exe ")
+        self.assertEqual(self.db.get_tool(tool_id).exe_path, r"C:\Program Files\A\a.exe")
+        self.db.update_tool(tool_id, "A", exe_path=r"D:\Tools\a.exe")
+        self.assertEqual(self.db.get_tool(tool_id).exe_path, r"D:\Tools\a.exe")
+        self.assertEqual(self.db.get_tool(self.db.add_tool("B")).exe_path, "")
+
+    def test_old_database_without_exe_path_is_upgraded(self):
+        import sqlite3
+
+        old_path = Path(self.tmp.name) / "old.db"
+        conn = sqlite3.connect(old_path)
+        # The tools table exactly as v0.1/v0.2 created it, without exe_path.
+        conn.executescript(
+            """
+            CREATE TABLE categories (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE);
+            CREATE TABLE tools (
+                id INTEGER PRIMARY KEY, name TEXT NOT NULL,
+                version TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '',
+                install_notes TEXT NOT NULL DEFAULT '', download_url TEXT NOT NULL DEFAULT '',
+                category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            INSERT INTO categories(name) VALUES ('Utilities');
+            INSERT INTO tools(name, version, category_id) VALUES ('7-Zip', '24.08', 1);
+            """
+        )
+        conn.commit()
+        conn.close()
+
+        db = Database(old_path)
+        try:
+            tool = db.list_tools()[0]
+            self.assertEqual((tool.name, tool.version, tool.category), ("7-Zip", "24.08", "Utilities"))
+            self.assertEqual(tool.exe_path, "")
+            db.update_tool(tool.id, "7-Zip", exe_path="C:/x/7z.exe", category="Utilities")
+            self.assertEqual(db.get_tool(tool.id).exe_path, "C:/x/7z.exe")
+        finally:
+            db.close()
+        # opening it a second time must not try to add the column again
+        Database(old_path).close()
+
     def test_clean_tags(self):
         self.assertEqual(clean_tags(" a ,, b,A "), ["a", "b"])
         self.assertEqual(clean_tags(["x", "x"]), ["x"])
