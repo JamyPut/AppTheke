@@ -2,6 +2,8 @@
 
 A personal catalog for the tools and apps you want to keep close: store them with notes, download their installers from a link you saved, and start them from one window.
 
+![Screenshot](demo.png)
+
 AppTheke is a **portable Windows program**. There is nothing to install: it is a single `AppTheke.exe`, and everything it stores sits in the same folder, so you can keep it on a USB stick and take it with you.
 
 > **Status:** version 1.0.0, the first release. Windows only for now. A self-hosted web version is planned.
