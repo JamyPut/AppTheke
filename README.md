@@ -143,3 +143,6 @@ AppTheke was built with use of AI. Most of the code, the tests and this document
 - **The app downloads and starts programs**, so a bug here matters more than in most small tools. Read the code before you rely on it for anything important, and keep a backup of `apptheke.db`.
 - **No warranty.** The software is provided as is, and its author is not liable for damage or data loss from using it.
 
+## License
+
+MIT. See [LICENSE](LICENSE).
