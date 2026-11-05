@@ -1,5 +1,6 @@
 # AppTheke
 
+## From the ancient Greek θήκη (thḗkē), a chest, case, or repository.
 A personal catalog for the tools and apps you want to keep close: store them with notes, download their installers from a link you saved, and start them from one window.
 
 ![Screenshot](demo.png)
