@@ -4,9 +4,9 @@ A personal catalog for the tools and apps you want to keep close: store them wit
 
 AppTheke is a **portable Windows program**. There is nothing to install: it is a single `AppTheke.exe`, and everything it stores sits in the same folder, so you can keep it on a USB stick and take it with you.
 
-> **Status:** version 1.0.0, the first release. Windows only for now. A self-hosted web version is planned (see the [roadmap](roadmap.md)).
+> **Status:** version 1.0.0, the first release. Windows only for now. A self-hosted web version is planned.
 
-> **AI disclaimer:** this project was built with heavy use of AI. See [AI disclaimer](#ai-disclaimer) before you rely on it.
+> **AI disclaimer:** this project was built with use of AI. See [AI disclaimer](#ai-disclaimer) before you rely on it.
 
 ## Features
 
@@ -137,12 +137,9 @@ New ideas go in [roadmap.md](roadmap.md) first. Changes worth knowing about go i
 
 ## AI disclaimer
 
-AppTheke was built with heavy use of AI. Most of the code, the tests and this documentation were written by Claude, an AI assistant made by Anthropic, while the maintainer decided what to build, ran the app and checked the results.
+AppTheke was built with use of AI. Most of the code, the tests and this documentation were written by Claude.
 
 - **AI-written code can contain mistakes**, including ones that are easy to miss. Automated tests cover the core logic (the database, downloading and launching), but the project has not had an independent code or security review.
 - **The app downloads and starts programs**, so a bug here matters more than in most small tools. Read the code before you rely on it for anything important, and keep a backup of `apptheke.db`.
 - **No warranty.** The software is provided as is, and its author is not liable for damage or data loss from using it.
 
-## License
-
-No license has been chosen yet. Until one is added, all rights are reserved by the author.
