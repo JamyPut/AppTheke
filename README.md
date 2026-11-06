@@ -148,4 +148,4 @@ AppTheke was built with use of AI. Most of the code, the tests and this document
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+GPLv3. See [LICENSE](LICENSE).
