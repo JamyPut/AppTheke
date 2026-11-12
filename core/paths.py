@@ -31,3 +31,18 @@ def downloads_dir() -> Path:
     except OSError:
         return Path.home()
     return folder
+
+
+def resource_dir() -> Path:
+    """Folder with the files bundled INTO the program, such as the app icon.
+
+    Not the same as app_dir(): a packaged single-file .exe unpacks its bundled
+    files to a temporary folder (sys._MEIPASS), while the catalog lives next to the .exe.
+    """
+    if getattr(sys, "frozen", False):
+        return Path(getattr(sys, "_MEIPASS", app_dir()))
+    return Path(__file__).resolve().parent.parent
+
+
+def resource_path(relative: str) -> Path:
+    return resource_dir() / relative

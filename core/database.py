@@ -1,4 +1,8 @@
-"""SQLite catalog: tools, categories (one per tool) and tags (many per tool).
+"""SQLite catalog: tools and websites, categories (one per entry) and tags (many per entry).
+
+An entry is either an installed/downloadable app (kind "app") or a website
+used as a tool (kind "website"). Both share name, description, category, tags
+and icon, so they live in one table.
 
 No UI code in here, so the web app in phase 2 can reuse it unchanged.
 """
@@ -8,6 +12,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .paths import db_path as default_db_path
+from .urls import normalize_url
+
+KINDS = ("app", "website")
+MAX_ICON_BYTES = 256 * 1024  # icons are small PNGs; this only guards against nonsense
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS categories (
@@ -23,6 +31,9 @@ CREATE TABLE IF NOT EXISTS tools (
     install_notes TEXT NOT NULL DEFAULT '',
     download_url  TEXT NOT NULL DEFAULT '',
     exe_path      TEXT NOT NULL DEFAULT '',
+    kind          TEXT NOT NULL DEFAULT 'app',
+    site_url      TEXT NOT NULL DEFAULT '',
+    icon          BLOB,
     category_id   INTEGER REFERENCES categories(id) ON DELETE SET NULL,
     created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -41,6 +52,17 @@ CREATE TABLE IF NOT EXISTS tool_tags (
 CREATE INDEX IF NOT EXISTS idx_tools_name ON tools(name COLLATE NOCASE);
 """
 
+# Columns added after the first release. CREATE TABLE IF NOT EXISTS leaves an
+# existing table untouched, so databases made by older versions get them added.
+_ADDED_COLUMNS = {
+    "exe_path": "TEXT NOT NULL DEFAULT ''",
+    "kind": "TEXT NOT NULL DEFAULT 'app'",
+    "site_url": "TEXT NOT NULL DEFAULT ''",
+    "icon": "BLOB",
+}
+
+_UNCHANGED = object()  # for update_tool: "leave the icon as it is"
+
 
 @dataclass
 class Tool:
@@ -51,6 +73,9 @@ class Tool:
     install_notes: str = ""
     download_url: str = ""
     exe_path: str = ""
+    kind: str = "app"
+    site_url: str = ""
+    icon: bytes | None = None  # a small PNG, or None
     category: str = ""
     tags: list[str] = field(default_factory=list)
 
@@ -66,6 +91,16 @@ def clean_tags(raw: str | list[str]) -> list[str]:
     return list(seen.values())
 
 
+def _check_icon(icon: bytes | None) -> bytes | None:
+    if icon is None:
+        return None
+    if not isinstance(icon, (bytes, bytearray)):
+        raise ValueError("An icon must be PNG data.")
+    if len(icon) > MAX_ICON_BYTES:
+        raise ValueError("That icon is too large.")
+    return bytes(icon)
+
+
 class Database:
     def __init__(self, path: str | Path | None = None):
         self.path = str(path) if path is not None else str(default_db_path())
@@ -77,14 +112,12 @@ class Database:
         self._migrate()
 
     def _migrate(self) -> None:
-        """Upgrade databases made by older versions. CREATE TABLE IF NOT EXISTS
-        leaves an existing table untouched, so new columns are added here."""
-        columns = {row["name"] for row in self.conn.execute("PRAGMA table_info(tools)")}
-        if "exe_path" not in columns:
-            self.conn.execute(
-                "ALTER TABLE tools ADD COLUMN exe_path TEXT NOT NULL DEFAULT ''"
-            )
-            self.conn.commit()
+        """Upgrade databases made by older versions of AppTheke."""
+        existing = {row["name"] for row in self.conn.execute("PRAGMA table_info(tools)")}
+        for column, definition in _ADDED_COLUMNS.items():  # constants, never user input
+            if column not in existing:
+                self.conn.execute(f"ALTER TABLE tools ADD COLUMN {column} {definition}")
+        self.conn.commit()
 
     def close(self) -> None:
         self.conn.close()
@@ -127,6 +160,9 @@ class Database:
             install_notes=row["install_notes"],
             download_url=row["download_url"],
             exe_path=row["exe_path"],
+            kind=row["kind"],
+            site_url=row["site_url"],
+            icon=bytes(row["icon"]) if row["icon"] is not None else None,
             category=row["category"] or "",
             tags=[r["name"] for r in tag_rows],
         )
@@ -148,14 +184,22 @@ class Database:
         exe_path: str = "",
         category: str = "",
         tags: str | list[str] = "",
+        kind: str = "app",
+        site_url: str = "",
+        icon: bytes | None = None,
     ) -> int:
+        if kind not in KINDS:
+            raise ValueError(f"Unknown kind of entry: {kind}")
         name = name.strip()
         if not name:
-            raise ValueError("A tool needs a name.")
+            raise ValueError("A website needs a name." if kind == "website" else "A tool needs a name.")
+        site_url = normalize_url(site_url) if kind == "website" else ""
+        icon = _check_icon(icon)
         with self.conn:  # one transaction: all of it is saved, or none of it
             cur = self.conn.execute(
                 "INSERT INTO tools(name, version, description, install_notes, "
-                "download_url, exe_path, category_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "download_url, exe_path, kind, site_url, icon, category_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     name,
                     version.strip(),
@@ -163,6 +207,9 @@ class Database:
                     install_notes.strip(),
                     download_url.strip(),
                     exe_path.strip(),
+                    kind,
+                    site_url,
+                    icon,
                     self._category_id(category),
                 ),
             )
@@ -181,14 +228,25 @@ class Database:
         exe_path: str = "",
         category: str = "",
         tags: str | list[str] = "",
+        site_url: str = "",
+        icon: bytes | None | object = _UNCHANGED,
     ) -> None:
+        """Change an entry. The kind (app or website) never changes. Leave `icon`
+        out to keep the current icon, pass bytes to replace it, or None to remove it."""
+        row = self.conn.execute("SELECT kind FROM tools WHERE id = ?", (tool_id,)).fetchone()
+        if row is None:
+            raise ValueError("That tool no longer exists.")
+        is_website = row["kind"] == "website"
         name = name.strip()
         if not name:
-            raise ValueError("A tool needs a name.")
+            raise ValueError("A website needs a name." if is_website else "A tool needs a name.")
+        site_url = normalize_url(site_url) if is_website else ""
+        if icon is not _UNCHANGED:
+            icon = _check_icon(icon)
         with self.conn:
-            cur = self.conn.execute(
+            self.conn.execute(
                 "UPDATE tools SET name = ?, version = ?, description = ?, "
-                "install_notes = ?, download_url = ?, exe_path = ?, "
+                "install_notes = ?, download_url = ?, exe_path = ?, site_url = ?, "
                 "category_id = ? WHERE id = ?",
                 (
                     name,
@@ -197,14 +255,22 @@ class Database:
                     install_notes.strip(),
                     download_url.strip(),
                     exe_path.strip(),
+                    site_url,
                     self._category_id(category),
                     tool_id,
                 ),
             )
-            if cur.rowcount == 0:
-                raise ValueError("That tool no longer exists.")
+            if icon is not _UNCHANGED:
+                self.conn.execute("UPDATE tools SET icon = ? WHERE id = ?", (icon, tool_id))
             self._set_tags(tool_id, clean_tags(tags))
             self._prune_unused()
+
+    def set_icon(self, tool_id: int, icon: bytes | None) -> bool:
+        """Set or remove (None) an entry's icon. Returns False if it no longer exists."""
+        icon = _check_icon(icon)
+        with self.conn:
+            cur = self.conn.execute("UPDATE tools SET icon = ? WHERE id = ?", (icon, tool_id))
+        return cur.rowcount > 0
 
     def delete_tool(self, tool_id: int) -> bool:
         """Remove a catalog entry. Returns False if it did not exist."""
@@ -215,7 +281,7 @@ class Database:
         return cur.rowcount > 0
 
     def _prune_unused(self) -> None:
-        """Drop categories and tags that no tool uses any more, so typos
+        """Drop categories and tags that no entry uses any more, so typos
         and renamed categories do not pile up in the dropdown."""
         self.conn.execute(
             "DELETE FROM categories WHERE id NOT IN "
@@ -231,21 +297,33 @@ class Database:
         ).fetchone()
         return self._to_tool(row) if row else None
 
-    def list_tools(self, search: str = "") -> list[Tool]:
+    def list_tools(self, search: str = "", kind: str | None = None) -> list[Tool]:
+        """Entries sorted by name. `kind` limits the list to "app" or "website"."""
+        conditions: list[str] = []
+        params: list[str] = []
+        if kind is not None:
+            conditions.append("t.kind = ?")
+            params.append(kind)
         search = search.strip()
         if search:
             # Escape LIKE wildcards so searching for '%' or '_' matches literally.
             escaped = search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-            rows = self.conn.execute(
-                self._SELECT
-                + "WHERE t.name LIKE ? ESCAPE '\\' ORDER BY t.name COLLATE NOCASE",
-                (f"%{escaped}%",),
-            ).fetchall()
-        else:
-            rows = self.conn.execute(
-                self._SELECT + "ORDER BY t.name COLLATE NOCASE"
-            ).fetchall()
+            conditions.append("t.name LIKE ? ESCAPE '\\'")
+            params.append(f"%{escaped}%")
+        where = "WHERE " + " AND ".join(conditions) + " " if conditions else ""
+        rows = self.conn.execute(
+            self._SELECT + where + "ORDER BY t.name COLLATE NOCASE", params
+        ).fetchall()
         return [self._to_tool(r) for r in rows]
+
+    def count_tools(self, kind: str | None = None) -> int:
+        if kind is None:
+            row = self.conn.execute("SELECT COUNT(*) AS n FROM tools").fetchone()
+        else:
+            row = self.conn.execute(
+                "SELECT COUNT(*) AS n FROM tools WHERE kind = ?", (kind,)
+            ).fetchone()
+        return row["n"]
 
     # ---- categories / tags --------------------------------------------
 

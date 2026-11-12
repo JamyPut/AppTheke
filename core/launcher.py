@@ -3,9 +3,11 @@
 import os
 import subprocess
 import sys
+import webbrowser
 from pathlib import Path
 
 from .paths import app_dir
+from .urls import normalize_url
 
 
 class LaunchError(Exception):
@@ -58,3 +60,21 @@ def launch(path: str, base_dir: Path | None = None) -> Path:
     except OSError as error:
         raise LaunchError(f"Windows could not start it: {error}")
     return target
+
+
+def open_website(url: str) -> str:
+    """Open a saved web address in the default browser and return the address used.
+
+    Raises LaunchError with a readable message on any failure.
+    """
+    try:
+        address = normalize_url(url)  # only http and https, never a file or a script
+    except ValueError as error:
+        raise LaunchError(str(error)) from error
+    try:
+        opened = webbrowser.open(address)
+    except webbrowser.Error as error:
+        raise LaunchError(f"Could not open the browser: {error}") from error
+    if not opened:
+        raise LaunchError("No web browser could be started.")
+    return address

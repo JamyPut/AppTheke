@@ -1,7 +1,7 @@
 # AppTheke
 > From the ancient Greek θήκη (thḗkē), a chest, case, or repository.
 
-A personal catalog for the tools and apps you want to keep close: store them with notes, download their installers from a link you saved, and start them from one window.
+A personal catalog for the tools and apps you want to keep close: store them with notes, download their installers from a link you saved, and start them from one window. Websites you use as tools get their own tab, like bookmarks that live in the app.
 
 ![Screenshot](demo.png)
 
@@ -18,6 +18,8 @@ AppTheke is a **portable Windows program**. There is nothing to install: it is a
 - **Search** the list by name while you type.
 - **Download** a tool's setup or executable from its saved link, into a folder you choose, with a progress bar.
 - **Launch** installed programs straight from the AppTheke window.
+- **Websites tab.** Keep web tools (converters, references, dashboards) next to your programs, with their own category, tags and notes, and open them in your browser with one click.
+- **Icons.** Every entry can have an icon: taken from the program itself, fetched from the website, or any picture you choose. Entries without one show their first letter.
 - **Portable.** The catalog is one file next to the program. Copy the folder and everything comes with it.
 - Follows the Windows light or dark setting.
 
@@ -53,11 +55,15 @@ python main.py
 
 | I want to... | Do this |
 |---|---|
-| Add a tool | Click **+ Add tool**, fill in the form (only the name is required), click **Add tool** |
-| See a tool's details | Click it in the list on the left |
-| Change or remove a tool | Open it, then click **Edit** or **Delete**. Delete only removes the catalog entry, never your files |
+| Switch between programs and websites | Use the **Apps** / **Websites** tabs above the list |
+| Add a tool | On the **Apps** tab, click **+ Add**, fill in the form (only the name is required), click **Add app** |
+| Add a website | On the **Websites** tab, click **+ Add**, enter a name and its address (`https://` is added if you leave it out), click **Add website** |
+| See the details | Click an entry in the list on the left |
+| Change or remove an entry | Open it, then click **Edit** or **Delete**. Delete only removes the catalog entry, never your files |
 | Download a tool | Open it and click **Download**, then choose a folder. The tool needs a download link, and the link must point directly to the file, not to a web page |
 | Start an installed tool | Save its program path (use **Browse...** in the Edit form), then click **Launch** |
+| Open a website | Open it and click **Open website**. It opens in your default browser |
+| Set an icon | In the form, click **Choose picture...** (PNG, ICO, JPG, GIF or BMP), or **From program** / **Fetch favicon** to find it automatically. A new entry saved without an icon gets one looked up automatically |
 
 ### About program paths
 
@@ -73,13 +79,20 @@ Everything is stored next to `AppTheke.exe`:
 
 | File or folder | What it is |
 |---|---|
-| `apptheke.db` | Your catalog. **Copy this file to back it up** |
+| `apptheke.db` | Your catalog, including the icons. **Copy this file to back it up** |
 | `downloads\` | The folder the Download window opens in first. Created when needed |
 | `apptheke-error.log` | Written only when something goes wrong. Attach it to a bug report |
 
 ## Safety
 
 AppTheke downloads files from links you enter and starts programs from paths you save. It does **not** check that a download is safe or unchanged, and it starts whatever file the saved path points to. Only add links from sources you trust, and scan downloaded installers as you normally would.
+
+Two things happen in the background that are worth knowing about:
+
+- **Fetching a website's icon** connects to that website (its page and its `favicon.ico`), and to nothing else.
+- **Reading a program's icon** runs Windows PowerShell for a moment, because that is how Windows hands out a file's icon. Some company PCs block PowerShell; the entry then simply shows its first letter.
+
+Websites can only be opened with `http://` or `https://` addresses, so a saved entry can never point to a file on your PC or run a script.
 
 ## For developers
 
@@ -89,14 +102,22 @@ AppTheke downloads files from links you enter and starts programs from paths you
 apptheke/
 ├── main.py            # entry point
 ├── core/              # logic without any window code (reused by the planned web app)
-│   ├── database.py    # SQLite catalog: tools, categories, tags
+│   ├── database.py    # SQLite catalog: apps and websites, categories, tags, icons
 │   ├── downloader.py  # downloads a file from a URL
-│   ├── launcher.py    # starts an installed program
+│   ├── launcher.py    # starts an installed program, opens a website
+│   ├── urls.py        # checks and cleans up web addresses
+│   ├── icons.py       # turns any picture into a 64x64 PNG icon (Pillow)
+│   ├── exeicon.py     # reads a program's icon (Windows)
+│   ├── favicon.py     # finds a website's icon
 │   ├── errorlog.py    # writes apptheke-error.log
 │   ├── paths.py       # keeps data next to the program (portable)
+│   ├── splash.py      # closes the splash screen
 │   └── version.py     # the version number
 ├── gui/app.py         # the window (CustomTkinter)
+├── assets/            # icon.png (source) and icon.ico (the app icon)
+├── tools/make_icon.py # rebuilds assets/icon.ico from assets/icon.png
 ├── tests/             # automated tests
+├── splash.png         # the splash screen picture
 ├── build.bat          # builds AppTheke.exe
 ├── roadmap.md         # planned work and parked ideas
 └── CHANGELOG.md       # what changed in each version
@@ -127,10 +148,24 @@ PyInstaller bundles Python, the libraries and the code into `dist\AppTheke.exe`.
 # --clean:                   clear PyInstaller's cache first
 # --onefile:                 produce one .exe instead of a folder of files
 # --windowed:                no black console window behind the app
+# --splash splash.png:       show this picture while the .exe unpacks itself
+# --icon assets\icon.ico:    the icon Windows shows for AppTheke.exe
+# --add-data "assets\icon.ico;assets": bundle the icon so the window can use it too
 # --name AppTheke:           name of the output file
 # --collect-all customtkinter: include CustomTkinter's theme and font files
-pyinstaller --noconfirm --clean --onefile --windowed --name AppTheke --collect-all customtkinter main.py
+pyinstaller --noconfirm --clean --onefile --windowed --splash splash.png --icon assets\icon.ico --add-data "assets\icon.ico;assets" --name AppTheke --collect-all customtkinter main.py
 ```
+
+### Change the app icon
+
+Replace `assets\icon.png` with your own square picture (at least 256 x 256 pixels), then run:
+
+```powershell
+# rebuilds assets\icon.ico, with every size Windows needs (16 to 256 pixels)
+python tools\make_icon.py
+```
+
+and build again.
 
 The single-file build unpacks itself on every start, so launching takes a few seconds.
 

@@ -5,6 +5,20 @@ All notable changes to AppTheke are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Websites tab: keep websites you use as tools, with category, tags and description, and open them in your browser.
+- Icons for every entry: read from the program, fetched from the website, or chosen from a picture. New entries get one looked up automatically. Entries without an icon show their first letter.
+- App icon for `AppTheke.exe` and its window.
+- `tools/make_icon.py` to rebuild the app icon from `assets/icon.png`.
+
+### Changed
+
+- Pillow is now a dependency (for icons), so the program is a few MB larger.
+- Existing catalogs are upgraded automatically the first time the new version opens them.
+
 ## [1.0.1] - 2026-11-05
 
 ### Added
