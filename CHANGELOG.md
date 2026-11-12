@@ -9,6 +9,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- "Fill from program": reads the name, version and description (with the publisher) from the chosen program and fills them in, together with its icon. Choosing a program with **Browse...** fills only the fields that are still empty; the button replaces them, which is handy for updating the version after an upgrade.
+
+## [1.1.0] - 2026-11-12
+
+### Added
+
 - Websites tab: keep websites you use as tools, with category, tags and description, and open them in your browser.
 - Icons for every entry: read from the program, fetched from the website, or chosen from a picture. New entries get one looked up automatically. Entries without an icon show their first letter.
 - App icon for `AppTheke.exe` and its window.

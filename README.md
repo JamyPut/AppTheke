@@ -62,6 +62,7 @@ python main.py
 | Change or remove an entry | Open it, then click **Edit** or **Delete**. Delete only removes the catalog entry, never your files |
 | Download a tool | Open it and click **Download**, then choose a folder. The tool needs a download link, and the link must point directly to the file, not to a web page |
 | Start an installed tool | Save its program path (use **Browse...** in the Edit form), then click **Launch** |
+| Fill in a tool's details | Pick the program with **Browse...**: its name, version, description and icon fill in the fields that are still empty. **Fill from program** replaces them, for example to update the version after an upgrade |
 | Open a website | Open it and click **Open website**. It opens in your default browser |
 | Set an icon | In the form, click **Choose picture...** (PNG, ICO, JPG, GIF or BMP), or **From program** / **Fetch favicon** to find it automatically. A new entry saved without an icon gets one looked up automatically |
 
@@ -90,7 +91,7 @@ AppTheke downloads files from links you enter and starts programs from paths you
 Two things happen in the background that are worth knowing about:
 
 - **Fetching a website's icon** connects to that website (its page and its `favicon.ico`), and to nothing else.
-- **Reading a program's icon** runs Windows PowerShell for a moment, because that is how Windows hands out a file's icon. Some company PCs block PowerShell; the entry then simply shows its first letter.
+- **Reading a program's icon and details** (name, version, description) runs Windows PowerShell for a moment, because that is how Windows hands them out. Some company PCs block PowerShell; you then fill in the details yourself, and the entry shows its first letter instead of an icon.
 
 Websites can only be opened with `http://` or `https://` addresses, so a saved entry can never point to a file on your PC or run a script.
 
@@ -108,6 +109,7 @@ apptheke/
 │   ├── urls.py        # checks and cleans up web addresses
 │   ├── icons.py       # turns any picture into a 64x64 PNG icon (Pillow)
 │   ├── exeicon.py     # reads a program's icon (Windows)
+│   ├── exeinfo.py     # reads a program's name, version and description (Windows)
 │   ├── favicon.py     # finds a website's icon
 │   ├── errorlog.py    # writes apptheke-error.log
 │   ├── paths.py       # keeps data next to the program (portable)

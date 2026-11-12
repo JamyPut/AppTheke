@@ -19,6 +19,7 @@ from core.database import Database, Tool
 from core.downloader import DownloadError, download
 from core.errorlog import log_exception
 from core.exeicon import extract_exe_icon
+from core.exeinfo import read_program_info
 from core.favicon import fetch_favicon
 from core.icons import IconError, load_icon_file, to_image
 from core.launcher import LaunchError, launch, open_website
@@ -49,6 +50,7 @@ class App(ctk.CTk):
         self.form_icon: bytes | None = None  # icon currently chosen in the form
         self.form_icon_changed = False       # did the user touch the icon while editing?
         self._icon_job = 0                   # numbers icon searches, so old results are ignored
+        self._fill_job = 0                   # the same for "Fill from program"
         self._image_cache: dict = {}
         self._downloading = False
         self._events: queue.Queue = queue.Queue()
@@ -548,8 +550,16 @@ class App(ctk.CTk):
         )
         self.exe_entry.grid(row=0, column=0, sticky="ew", padx=(0, 8))
         ctk.CTkButton(exe_row, text="Browse...", width=90, command=self.browse_exe).grid(
-            row=0, column=1
+            row=0, column=1, padx=(0, 8)
         )
+        ctk.CTkButton(
+            exe_row, text="Fill from program", width=130, command=self.fill_from_program
+        ).grid(row=0, column=2)
+        # Result of reading the program's name, version and description.
+        self.details_status = ctk.CTkLabel(
+            exe_row, text="", anchor="w", justify="left", wraplength=480
+        )
+        self.details_status.grid(row=1, column=0, columnspan=3, sticky="w", pady=(4, 0))
 
         _, self.description_box = self._textbox(panel, 16, "Description", height=90)
         notes_label, self.notes_box = self._textbox(panel, 18, "Install notes", height=90)
@@ -597,6 +607,7 @@ class App(ctk.CTk):
 
     def _reset_form(self) -> None:
         self._icon_job += 1  # ignore any icon search that is still running
+        self._fill_job += 1  # ... and any "Fill from program" that is still running
         for entry in (
             self.name_entry, self.version_entry, self.tags_entry, self.url_entry,
             self.exe_entry, self.site_entry,
@@ -609,6 +620,7 @@ class App(ctk.CTk):
         self.category_box.set("")
         self.status_label.configure(text="")
         self.icon_status.configure(text="")
+        self.details_status.configure(text="")
         self._configure_form_for_kind()
         self._set_form_icon(None, changed=False)
 
@@ -656,8 +668,74 @@ class App(ctk.CTk):
         if chosen:  # empty when the dialog is cancelled
             self.exe_entry.delete(0, "end")
             self.exe_entry.insert(0, str(Path(chosen)))
+            # Picking a program fills in what is still empty; it never overwrites your typing.
+            self.fill_from_program(overwrite=False)
+
+    def fill_from_program(self, overwrite: bool = True) -> None:
+        """Fill name, version, description (and the icon, if there is none) from the program.
+
+        The button replaces name, version and description with what the program
+        says (overwrite=True). After Browse..., only empty fields are filled.
+        """
+        path = self.exe_entry.get().strip()
+        if not path:
+            self.details_status.configure(
+                text="Enter the executable path first, or use Browse...", text_color=ERROR_COLOR
+            )
+            return
+        want_icon = self.form_icon is None
+
+        def work():
+            info = read_program_info(path)
+            icon = extract_exe_icon(path) if want_icon else None
+            return info, icon
+
+        self._fill_job += 1
+        job = self._fill_job
+        self.details_status.configure(text="Reading the program...", text_color=MUTED)
+
+        def done(result, error) -> None:
+            if job != self._fill_job:  # the form was closed or refilled meanwhile
+                return
+            info, icon = result if error is None and result else (None, None)
+            filled = []
+            if info is not None:
+                for entry, value, label in (
+                    (self.name_entry, info.name, "name"),
+                    (self.version_entry, info.version, "version"),
+                ):
+                    if value and (overwrite or not entry.get().strip()):
+                        entry.delete(0, "end")
+                        entry.insert(0, value)
+                        filled.append(label)
+                current = self.description_box.get("1.0", "end").strip()
+                if info.description and (overwrite or not current):
+                    self.description_box.delete("1.0", "end")
+                    self.description_box.insert("1.0", info.description)
+                    filled.append("description")
+            if icon is not None and self.form_icon is None:  # a picture chosen meanwhile wins
+                self._set_form_icon(icon)
+                filled.append("icon")
+            elif "name" in filled and self.form_icon is None:
+                self._set_form_icon(None, changed=self.form_icon_changed)  # new first letter
+
+            if filled:
+                self.details_status.configure(
+                    text=f"Filled in from the program: {', '.join(filled)}.", text_color=OK_COLOR
+                )
+            elif info is not None:
+                self.details_status.configure(
+                    text="Nothing new to fill in: the fields already have values.", text_color=MUTED
+                )
+            else:
+                self.details_status.configure(
+                    text="Could not read details from this program.", text_color=ERROR_COLOR
+                )
+
+        self._run_background(work, done)
 
     def cancel_form(self) -> None:
+        self._fill_job += 1
         self._icon_job += 1  # ignore any icon search that is still running
         if self.selected_id is not None:
             self.select_tool(self.selected_id)
@@ -791,6 +869,7 @@ class App(ctk.CTk):
             return
 
         self._icon_job += 1  # an icon search for the closed form must not apply any more
+        self._fill_job += 1
         self.selected_id = tool_id
         self.refresh_list()
         self.select_tool(tool_id)
